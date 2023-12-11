@@ -18,6 +18,8 @@ $GitPortableUrl = "https://github.com/git-for-windows/git/releases/download/v2.4
 $TempDirectory = "$env:TEMP\GlistInstaller"
 $GitPortablePath = "$TempDirectory\GitPortable"
 
+New-Item -ItemType Directory -Path $TempDirectory -Force -ErrorAction Inquire | Out-Null
+
 # Check if Git is already installed
 if ((Get-Command "git.exe" -ErrorAction SilentlyContinue) -eq $null) {
     Write-Host "Git not installed, installing to $GitPortablePath"
@@ -62,6 +64,7 @@ New-Item -ItemType Directory -Path $GlistZbinDir -Force -ErrorAction Inquire | O
 $webClient = New-Object System.Net.WebClient
 Write-Host "Downloading zbin file..."
 $webClient.DownloadFile($GlistZbinUrl, "$TempDirectory\glistzbin-win64.zip")
+Write-Host "Download successful."
 
 try {
     # Extract the archive
