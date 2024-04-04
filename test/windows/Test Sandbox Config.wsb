@@ -5,7 +5,7 @@
   </LogonCommand>
   <MappedFolders>
     <MappedFolder>
-      <HostFolder>C:\Users\irrel\OneDrive\Desktop\Glist Installer</HostFolder>
+      <HostFolder>.\scripts\windows</HostFolder>
       <SandboxFolder>C:\sandbox</SandboxFolder>
       <ReadOnly>True</ReadOnly>
     </MappedFolder>

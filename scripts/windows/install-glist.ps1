@@ -9,7 +9,7 @@ $EclipseLink = "C:\dev\glist\zbin\glistzbin-win64\GlistEngine-Win64.lnk"
 $GitHubUrl = "https://github.com/GlistEngine"
 $GlistEngineUrl = "$GitHubUrl/GlistEngine"
 $GlistAppUrl = "$GitHubUrl/glistapp"
-$GlistZbinUrl = (Invoke-RestMethod -Uri "https://raw.githubusercontent.com/irrld/glist-urls/main/zbin-win64" -ErrorAction Inquire)
+$GlistZbinUrl = (Invoke-RestMethod -Uri "https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-win64" -ErrorAction Inquire)
 Write-Host "Latest zbin release url: $GlistZbinUrl"
 
 $GitPortableUrl = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/MinGit-2.43.0-64-bit.zip"
