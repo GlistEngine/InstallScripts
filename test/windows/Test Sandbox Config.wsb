@@ -1,12 +1,17 @@
 <Configuration>
   <vGPU>true</vGPU>
   <LogonCommand>
-    <Command>powershell.exe -ExecutionPolicy Bypass -File C:\sandbox\copy.ps1</Command>
+    <Command>powershell.exe -ExecutionPolicy Bypass -File C:\tools\copy.ps1</Command>
   </LogonCommand>
   <MappedFolders>
     <MappedFolder>
-      <HostFolder>.\scripts\windows</HostFolder>
+      <HostFolder>.\..\..\scripts\windows</HostFolder>
       <SandboxFolder>C:\sandbox</SandboxFolder>
+      <ReadOnly>True</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>.\tools</HostFolder>
+      <SandboxFolder>C:\tools</SandboxFolder>
       <ReadOnly>True</ReadOnly>
     </MappedFolder>
   </MappedFolders>
