@@ -13,7 +13,7 @@ if [[ "$?" -ne 0 ]] ; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 # Install the required packages
-brew install git openssl@1.1 libomp llvm cmake glew glfw glm freetype assimp curl git wget
+brew install git openssl@1.1 libomp llvm cmake glew glfw glm freetype assimp curl git wget pkg-config
 sudo spctl --master-disable
 
 # todo check if command line tools are properly installed and delete if required!
