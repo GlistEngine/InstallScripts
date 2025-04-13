@@ -17,7 +17,7 @@ fi
 $UPDATE_CMD
 
 # Install required packages
-$PKG_INSTALL git openssl libomp-dev llvm cmake libglew-dev libglfw3-dev libglm-dev libfreetype6-dev libassimp-dev curl wget pkg-config unzip
+$PKG_INSTALL git cmake clang-14 libstdc++-12-dev libglew-dev curl libcurl4-openssl-dev libssl-dev build-essential openssl libomp-dev llvm libglfw3-dev libglm-dev libfreetype6-dev libassimp-dev wget pkg-config unzip
 
 # Create directories
 mkdir -p ~/dev/glist ~/dev/glist/zbin ~/dev/glist/myglistapps
