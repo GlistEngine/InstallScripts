@@ -57,7 +57,7 @@ if [[ $(uname -p) == 'arm' ]]; then
     if [ ! -f "glistzbin-macos.zip" ]; then
     echo "Downloading zbin for arm architecture"
         URL=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-macos)
-        wget -O glistzbin-macos.zip $URL
+        wget --tries=inf --retry-connrefused --waitretry=1 -O glistzbin-macos.zip $URL
         if [[ "$?" -ne 0 ]] ; then
             echo "Failed to download zbin!"
             exit 
@@ -87,7 +87,7 @@ else
     if [ ! -f "glistzbin-macos-x86_64.zip" ]; then
         echo "Downloading zbin for intel architecture"
         URL=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-macos-intel)
-        wget -O glistzbin-macos-x86_64.zip $URL
+        wget --tries=inf --retry-connrefused --waitretry=1 -O glistzbin-macos-x86_64.zip $URL
         if [[ "$?" -ne 0 ]] ; then
             echo "Failed to download zbin!"
             exit 
