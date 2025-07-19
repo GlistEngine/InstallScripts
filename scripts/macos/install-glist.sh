@@ -1,4 +1,4 @@
-version="0.1.2"
+version="0.2.0"
 echo "Installation script version $version"
 
 # Execute the brew command
@@ -54,22 +54,29 @@ fi
 cd ~/dev/glist/zbin
 
 if [[ $(uname -p) == 'arm' ]]; then
+    JSON=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-macos.json)
+    REPO=$(echo "$JSON" | jq -r .repo)
+    PATTERN=$(echo "$JSON" | jq -r .pattern)
+    VERSION=$(echo "$JSON" | jq -r .version)
+    ECLIPSE_FOLDER=$(echo "$JSON" | jq -r .eclipse_folder)
+
     if [ ! -f "glistzbin-macos.zip" ]; then
-    echo "Downloading zbin for arm architecture"
-        URL=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-macos)
-        wget --tries=inf --retry-connrefused --waitretry=1 -O glistzbin-macos.zip $URL
+        echo "Downloading zbin for arm architecture"
+        echo "Fetching from $REPO, version $VERSION, pattern $PATTERN"
+        gh release download "$VERSION" --repo "$REPO" --pattern "$PATTERN" -O glistzbin-macos.zip
         if [[ "$?" -ne 0 ]] ; then
             echo "Failed to download zbin!"
             exit 
         fi
     fi
+
     if [ ! -f "glistzbin-macos" ]; then
         echo "Unzipping zbin"
         unzip "glistzbin-macos.zip" -x '__MACOSX/*' '.git/*'
     else 
         echo "Zbin already exists, skipping"
     fi
-    ECLIPSE_FOLDER=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/eclipse-macos)
+
     cd ~/dev/glist/zbin/glistzbin-macos/eclipse/$ECLIPSE_FOLDER
     echo "Signing Eclipse"
     sudo xattr -cr Eclipse.app
@@ -84,22 +91,29 @@ if [[ $(uname -p) == 'arm' ]]; then
     (echo; echo 'export PATH=$PATH:/opt/homebrew/bin') >> ~/.zprofile
     export PATH=$PATH:/opt/homebrew/bin
 else 
+    JSON=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-macos-intel.json)
+    REPO=$(echo "$JSON" | jq -r .repo)
+    PATTERN=$(echo "$JSON" | jq -r .pattern)
+    VERSION=$(echo "$JSON" | jq -r .version)
+    ECLIPSE_FOLDER=$(echo "$JSON" | jq -r .eclipse_folder)
+
     if [ ! -f "glistzbin-macos-x86_64.zip" ]; then
         echo "Downloading zbin for intel architecture"
-        URL=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-macos-intel)
-        wget --tries=inf --retry-connrefused --waitretry=1 -O glistzbin-macos-x86_64.zip $URL
+        echo "Fetching from $REPO, version $VERSION, pattern $PATTERN"
+        gh release download "$VERSION" --repo "$REPO" --pattern "$PATTERN" -O glistzbin-macos-x86_64.zip
         if [[ "$?" -ne 0 ]] ; then
             echo "Failed to download zbin!"
             exit 
         fi
     fi
+
     if [ ! -f "glistzbin-macos-x86_64" ]; then
           echo "Unzipping zbin"
           unzip "glistzbin-macos-x86_64.zip" -x '__MACOSX/*' '.git/*'
     else 
         echo "Zbin already exists, skipping"
     fi
-    ECLIPSE_FOLDER=$(curl https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/eclipse-macos-intel)
+    
     cd ~/dev/glist/zbin/glistzbin-macos-x86_64/eclipse/$ECLIPSE_FOLDER
     echo "Signing Eclipse"
     sudo xattr -cr Eclipse.app
