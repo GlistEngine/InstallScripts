@@ -53,6 +53,8 @@ fi
 # Download the zbin
 cd ~/dev/glist/zbin
 
+echo | gh auth login --hostname github.com --git-protocol https --web --scopes "repo"
+
 if [[ $(uname -p) == 'arm' ]]; then
     JSON=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-macos.json)
     REPO=$(echo "$JSON" | jq -r .repo)
