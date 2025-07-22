@@ -53,8 +53,6 @@ fi
 # Download the zbin
 cd ~/dev/glist/zbin
 
-echo | gh auth login --hostname github.com --git-protocol https --web --scopes "repo"
-
 if [[ $(uname -p) == 'arm' ]]; then
     JSON=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-macos.json)
     REPO=$(echo "$JSON" | jq -r .repo)
@@ -64,6 +62,8 @@ if [[ $(uname -p) == 'arm' ]]; then
 
     if [ ! -f "glistzbin-macos.zip" ]; then
         echo "Downloading zbin for arm architecture"
+        echo | gh auth login --hostname github.com --git-protocol https --web --scopes "repo"
+        
         echo "Fetching from $REPO, version $VERSION, pattern $PATTERN"
         gh release download "$VERSION" --repo "$REPO" --pattern "$PATTERN" -O glistzbin-macos.zip
         if [[ "$?" -ne 0 ]] ; then
@@ -101,6 +101,7 @@ else
 
     if [ ! -f "glistzbin-macos-x86_64.zip" ]; then
         echo "Downloading zbin for intel architecture"
+        echo | gh auth login --hostname github.com --git-protocol https --web --scopes "repo"
         echo "Fetching from $REPO, version $VERSION, pattern $PATTERN"
         gh release download "$VERSION" --repo "$REPO" --pattern "$PATTERN" -O glistzbin-macos-x86_64.zip
         if [[ "$?" -ne 0 ]] ; then
