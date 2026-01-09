@@ -34,7 +34,9 @@ sudo spctl --master-disable
 xcode-select --install || true
 
 # ---- dirs ----
-mkdir -p ~/dev/glist/{zbin,myglistapps}
+mkdir -p ~/dev/glist
+mkdir -p ~/dev/glist/zbin
+mkdir -p ~/dev/glist/myglistapps
 
 # ---- github user ----
 echo "Enter your GitHub Username (press enter to clone from the default repo): "
