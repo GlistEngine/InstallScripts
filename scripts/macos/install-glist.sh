@@ -68,7 +68,7 @@ fi
 if [ ! -f "$ZIP" ]; then
     echo "Downloading zbin"
     URL=$(curl -fsSL "$URL_FILE")
-    wget --tries=inf --retry-connrefused --waitretry=1 -O "$ZIP" "$URL" || exit 1
+    wget --no-check-certificate --tries=inf --retry-connrefused --waitretry=1 -O "$ZIP" "$URL" || exit 1
 fi
 
 if [ ! -d "$DIR" ]; then
