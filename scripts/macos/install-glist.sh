@@ -16,11 +16,17 @@ if ! $skip_brew; then
     if ! command -v brew >/dev/null 2>&1; then
         echo "Brew is not installed!"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Fresh install won't be in PATH yet, init from known location
+        if [[ "$(uname -m)" == "arm64" ]]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        else
+            eval "$(/usr/local/bin/brew shellenv)"
+        fi
+    else
+        # Already installed, still need to init for this session
+        eval "$(brew shellenv)"
     fi
-
     brew_prefix="$(brew --prefix)"
-    eval "$("$brew_prefix/bin/brew" shellenv)"
-
     brew install git openssl@3 libomp llvm cmake glew glfw glm freetype assimp curl wget pkg-config
 else
     echo "Skipping Homebrew install step"
