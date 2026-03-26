@@ -27,7 +27,7 @@ if ! $skip_brew; then
         eval "$(brew shellenv)"
     fi
     brew_prefix="$(brew --prefix)"
-    brew install git openssl@3 libomp cmake glew glfw glm freetype assimp curl wget pkg-config
+    brew install git openssl@3 cmake glew glfw glm freetype assimp curl wget pkg-config
 else
     echo "Skipping Homebrew install step"
     if command -v brew >/dev/null 2>&1; then
