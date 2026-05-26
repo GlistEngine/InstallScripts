@@ -1,1 +1,3 @@
 These files are used in the install scripts to fetch the latest version of the software without requiring the script to be updated.
+
+Migrate to metadata json files instead.
