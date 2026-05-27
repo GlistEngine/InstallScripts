@@ -26,15 +26,15 @@ INSTALL_SCRIPTS_ROOT="$(cd "$TOOLS_ROOT/.." && pwd -P)"
 
 ECLIPSE_DMG_ARM64="${ECLIPSE_DMG_ARM64:-${1:-}}"
 ECLIPSE_DMG_X86_64="${ECLIPSE_DMG_X86_64:-${2:-}}"
-GLIST_WIZARDS_REPO="${GLIST_WIZARDS_REPO:-$INSTALL_SCRIPTS_ROOT/../GlistWizards}"
+GLIST_PLUGINS_REPO="${GLIST_PLUGINS_REPO:-${GLIST_WIZARDS_REPO:-$INSTALL_SCRIPTS_ROOT/../Eclipse-Plugins}}"
 OUT_DIR="${OUT_DIR:-$HERE/dist}"
 STAGING="${STAGING:-$HERE/staging}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ -f "$ECLIPSE_DMG_ARM64"  ]] || die "ECLIPSE_DMG_ARM64 not set or missing: $ECLIPSE_DMG_ARM64"
 [[ -f "$ECLIPSE_DMG_X86_64" ]] || die "ECLIPSE_DMG_X86_64 not set or missing: $ECLIPSE_DMG_X86_64"
-[[ -d "$GLIST_WIZARDS_REPO" ]] || die "GLIST_WIZARDS_REPO not set or missing: $GLIST_WIZARDS_REPO"
-[[ -x "$GLIST_WIZARDS_REPO/build.sh" ]] || die "GlistWizards/build.sh not executable"
+[[ -d "$GLIST_PLUGINS_REPO" ]] || die "GLIST_PLUGINS_REPO not set or missing: $GLIST_PLUGINS_REPO"
+[[ -x "$GLIST_PLUGINS_REPO/build.sh" ]] || die "$GLIST_PLUGINS_REPO/build.sh not executable"
 
 LAUNCHER_SRC="$TOOLS_ROOT/launcher/glistengine-launcher.c"
 LAUNCHER_SH="$TOOLS_ROOT/launcher/launcher.sh"
@@ -65,40 +65,53 @@ echo "== Extracting Eclipses =="
 extract_dmg "$ECLIPSE_DMG_ARM64"  "$ECLIPSE_DIR/eclipsecpp-arm64"
 extract_dmg "$ECLIPSE_DMG_X86_64" "$ECLIPSE_DIR/eclipsecpp-x86_64"
 
-echo "== Building wizard JAR =="
+echo "== Building plugin JARs =="
 ECLIPSE_HOME="$ECLIPSE_DIR/eclipsecpp-arm64/Eclipse.app/Contents/Eclipse" \
-    "$GLIST_WIZARDS_REPO/build.sh"
-WIZARD_JAR=$(ls "$GLIST_WIZARDS_REPO"/com.aitial.glist.wizards_*.jar | tail -1)
-[[ -f "$WIZARD_JAR" ]] || die "build.sh did not produce a JAR"
-WIZARD_JAR_NAME=$(basename "$WIZARD_JAR")
-WIZARD_VERSION=$(echo "$WIZARD_JAR_NAME" | sed 's/^com.aitial.glist.wizards_//; s/\.jar$//')
-echo "  Wizard $WIZARD_VERSION -> $WIZARD_JAR_NAME"
+    "$GLIST_PLUGINS_REPO/build.sh"
+# Discover every <symbolic-name>_<version>.jar the build script produced.
+PLUGIN_JARS=()
+for plugin_dir in "$GLIST_PLUGINS_REPO"/*/; do
+    while IFS= read -r -d '' jar; do
+        PLUGIN_JARS+=("$jar")
+    done < <(find "$plugin_dir" -maxdepth 1 -name "*_*.jar" -print0)
+done
+[[ ${#PLUGIN_JARS[@]} -gt 0 ]] || die "$GLIST_PLUGINS_REPO/build.sh did not produce any JARs"
+for jar in "${PLUGIN_JARS[@]}"; do
+    echo "  -> $(basename "$jar")"
+done
 
 customize_eclipse() {
     local eclipse_root="$1"     # .../eclipsecpp-<arch>/Eclipse.app
     local contents="$eclipse_root/Contents/Eclipse"
 
-    # 1. Drop in our plugin JARs.
-    cp "$WIZARD_JAR" "$contents/plugins/"
+    # 1. Drop in our plugin JARs (built from Eclipse-Plugins/ + vendored assets).
+    for jar in "${PLUGIN_JARS[@]}"; do
+        cp "$jar" "$contents/plugins/"
+    done
     cp "$ASSETS_PLUGINS"/*.jar "$contents/plugins/"
 
-    # 2. Register them in bundles.info.
+    # 2. Register them in bundles.info. Strip any pre-existing entry with the
+    #    same symbolic name first so we don't ship duplicates.
     local bundles="$contents/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info"
-    grep -v "^com.aitial.glist.wizards," "$bundles" > "$bundles.tmp"
-    grep -v "^de.marw\." "$bundles.tmp" > "$bundles.tmp2"
-    mv "$bundles.tmp2" "$bundles"; rm "$bundles.tmp"
-    printf "com.aitial.glist.wizards,%s,plugins/%s,4,false\n" \
-        "$WIZARD_VERSION" "$WIZARD_JAR_NAME" >> "$bundles"
-    for jar in "$ASSETS_PLUGINS"/*.jar; do
-        local n
+    local purge_file
+    purge_file=$(mktemp)
+    {
+        for jar in "${PLUGIN_JARS[@]}" "$ASSETS_PLUGINS"/*.jar; do
+            basename "$jar" | sed 's/_[^_]*$//'
+        done
+    } > "$purge_file"
+    awk -F, 'NR==FNR{purge[$0]=1; next} !purge[$1]' \
+        "$purge_file" "$bundles" > "$bundles.tmp"
+    mv "$bundles.tmp" "$bundles"
+    rm -f "$purge_file"
+
+    for jar in "${PLUGIN_JARS[@]}" "$ASSETS_PLUGINS"/*.jar; do
+        local n sym ver
         n=$(basename "$jar")
-        local sym ver
-        # e.g. de.marw.cmake4eclipse.mbs_3.0.2.202510221825.jar
+        # e.g. com.aitial.glist.wizards_1.3.0.202605271026.jar
         sym="${n%_*}"
         ver="${n#*_}"; ver="${ver%.jar}"
-        local start_level=4
-        printf "%s,%s,plugins/%s,%d,false\n" \
-            "$sym" "$ver" "$n" "$start_level" >> "$bundles"
+        printf "%s,%s,plugins/%s,4,false\n" "$sym" "$ver" "$n" >> "$bundles"
     done
 
     # 3. Replace splash images (PNG in both common + platform; BMP in common
@@ -150,18 +163,23 @@ quickStart=false
 tipsAndTricks=false
 EOF
 
-# Mirror the wizard sources into the workspace (matches Windows convention,
-# lets curious users browse/modify the plugin from inside the IDE).
-WS_SRC="$WS/com.aitial.glist.wizards"
-mkdir -p "$WS_SRC"
-cp -R "$GLIST_WIZARDS_REPO/META-INF" "$WS_SRC/"
-cp -R "$GLIST_WIZARDS_REPO/icons"    "$WS_SRC/"
-cp -R "$GLIST_WIZARDS_REPO/src"      "$WS_SRC/"
-cp    "$GLIST_WIZARDS_REPO/.project"      "$WS_SRC/" 2>/dev/null || true
-cp    "$GLIST_WIZARDS_REPO/.classpath"    "$WS_SRC/" 2>/dev/null || true
-cp    "$GLIST_WIZARDS_REPO/build.properties" "$WS_SRC/"
-cp    "$GLIST_WIZARDS_REPO/plugin.xml"       "$WS_SRC/"
-[[ -d "$GLIST_WIZARDS_REPO/.settings" ]] && cp -R "$GLIST_WIZARDS_REPO/.settings" "$WS_SRC/"
+# Mirror every plugin's source into the workspace (matches Windows convention,
+# lets curious users browse/modify the plugins from inside the IDE).
+for plugin_dir in "$GLIST_PLUGINS_REPO"/*/; do
+    [[ -f "$plugin_dir/META-INF/MANIFEST.MF" ]] || continue
+    name=$(basename "${plugin_dir%/}")
+    ws_src="$WS/$name"
+    mkdir -p "$ws_src"
+    cp -R "$plugin_dir/META-INF" "$ws_src/"
+    cp -R "$plugin_dir/src"      "$ws_src/"
+    [[ -d "$plugin_dir/icons"    ]] && cp -R "$plugin_dir/icons"    "$ws_src/"
+    [[ -d "$plugin_dir/OSGI-INF" ]] && cp -R "$plugin_dir/OSGI-INF" "$ws_src/"
+    [[ -d "$plugin_dir/.settings" ]] && cp -R "$plugin_dir/.settings" "$ws_src/"
+    cp "$plugin_dir/plugin.xml"        "$ws_src/" 2>/dev/null || true
+    cp "$plugin_dir/build.properties"  "$ws_src/" 2>/dev/null || true
+    cp "$plugin_dir/.project"          "$ws_src/" 2>/dev/null || true
+    cp "$plugin_dir/.classpath"        "$ws_src/" 2>/dev/null || true
+done
 
 echo "== Ad-hoc signing =="
 xattr -cr "$ECLIPSE_DIR/eclipsecpp-arm64/Eclipse.app" \
