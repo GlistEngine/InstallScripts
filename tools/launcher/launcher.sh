@@ -49,7 +49,7 @@ fi
 # CommandLineTools shims). Prepend the arch-correct brew bin + standard system
 # dirs so the wizard's `git`, CMake, compilers, etc. resolve. Everything Eclipse
 # spawns (ProcessBuilder, external tools, terminal view) inherits this PATH.
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}:$BREW_BIN"
+export PATH="$BREW_BIN:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 export CC="$COMPILER_DIR/clang"
 export CXX="$COMPILER_DIR/clang++"
 
