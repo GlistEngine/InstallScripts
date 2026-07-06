@@ -1,50 +1,48 @@
 #!/bin/bash
-version="0.1.2"
+version="0.1.3"
 echo "Installation script version $version"
-
 # Determine package manager
 if command -v apt >/dev/null; then
     PKG_INSTALL="sudo apt install -y"
     UPDATE_CMD="sudo apt update"
+    PACKAGES="git cmake clang-14 libstdc++-12-dev libglew-dev curl libcurl4-openssl-dev libssl-dev build-essential openssl libomp-dev llvm libglfw3-dev libglm-dev libfreetype6-dev libassimp-dev wget pkg-config unzip"
+elif command -v pacman >/dev/null; then
+    PKG_INSTALL="sudo pacman -S --needed --noconfirm"
+    # -Syu (not -Sy) to avoid partial-upgrade breakage on Arch; this does a full system upgrade
+    UPDATE_CMD="sudo pacman -Syu --noconfirm"
+    # Arch bundles dev headers into the main package, so no separate -dev packages.
+    # base-devel replaces build-essential; pkgconf provides pkg-config; openmp provides libomp.
+    PACKAGES="git cmake clang gcc glew curl openssl base-devel openmp llvm glfw glm freetype2 assimp wget pkgconf unzip"
 elif command -v yum >/dev/null; then
     PKG_INSTALL="sudo yum install -y"
     UPDATE_CMD="sudo yum update"
+    PACKAGES="git cmake clang-14 libstdc++-12-dev libglew-dev curl libcurl4-openssl-dev libssl-dev build-essential openssl libomp-dev llvm libglfw3-dev libglm-dev libfreetype6-dev libassimp-dev wget pkg-config unzip"
 else
     echo "Unsupported package manager. Install dependencies manually."
     exit 1
 fi
-
 $UPDATE_CMD
-
 # Install required packages
-$PKG_INSTALL git cmake clang-14 libstdc++-12-dev libglew-dev curl libcurl4-openssl-dev libssl-dev build-essential openssl libomp-dev llvm libglfw3-dev libglm-dev libfreetype6-dev libassimp-dev wget pkg-config unzip
-
+$PKG_INSTALL $PACKAGES
 # Create directories
 mkdir -p ~/dev/glist ~/dev/glist/zbin ~/dev/glist/myglistapps
-
 # GitHub username
 echo "Enter your GitHub Username (press enter to clone from the default repo): "
 read username
 username=${username:-GlistEngine}
-
 # Clone repositories
 cd ~/dev/glist
 git clone https://github.com/$username/GlistEngine || { echo "Failed to clone GlistEngine"; exit 1; }
-
 cd ~/dev/glist/myglistapps
 git clone https://github.com/$username/GlistApp || { echo "Failed to clone GlistApp"; exit 1; }
-
 # Download zbin
 cd ~/dev/glist/zbin
-
 ZIP_NAME="glistzbin-linux.zip"
 URL=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-linux)
-
 if [ ! -f "$ZIP_NAME" ]; then
     echo "Downloading zbin: $ZIP_NAME"
     wget -O "$ZIP_NAME" "$URL" || { echo "Failed to download zbin!"; exit 1; }
 fi
-
 UNZIP_DIR="${ZIP_NAME%.zip}"
 if [ ! -d "$UNZIP_DIR" ]; then
     echo "Unzipping zbin"
@@ -52,18 +50,15 @@ if [ ! -d "$UNZIP_DIR" ]; then
 else
     echo "Zbin already exists, skipping"
 fi
-
 # Create Eclipse shortcut
 ECLIPSE_FOLDER=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/eclipse-linux)
 ECLIPSE_DIR=~/dev/glist/zbin/glistzbin-linux/eclipse/$ECLIPSE_FOLDER
 ECLIPSE_BIN="$ECLIPSE_DIR/eclipse"
 ECLIPSE_ICON="$ECLIPSE_DIR/icon.xpm"
-
 if [ -x "$ECLIPSE_BIN" ]; then
     echo "Creating desktop shortcut..."
     DESKTOP_FILE=~/.local/share/applications/glistengine-eclipse.desktop
     mkdir -p "$(dirname "$DESKTOP_FILE")"
-
     cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Name=GlistEngine Eclipse
@@ -73,11 +68,9 @@ Type=Application
 Categories=Development;IDE;
 Terminal=false
 EOF
-
     chmod +x "$DESKTOP_FILE"
     echo "Shortcut created at $DESKTOP_FILE"
 else
     echo "Eclipse binary not found, skipping shortcut creation."
 fi
-
 echo "Installation completed successfully!"
