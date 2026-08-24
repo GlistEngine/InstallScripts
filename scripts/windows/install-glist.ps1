@@ -4,12 +4,27 @@ $GlistDir = "C:\dev\glist"
 $GlistEngineDir = "C:\dev\glist\glistengine"
 $GistAppsDir = "C:\dev\glist\myglistapps"
 $GlistZbinDir = "C:\dev\glist\zbin"
-$EclipseLink = "C:\dev\glist\zbin\glistzbin-win64\GlistEngine-Win64.lnk"
+$GlistZbinExtractedDir = "$GlistZbinDir\glistzbin-win64"
+$EclipseLink = "$GlistZbinExtractedDir\GlistEngine-Win64.lnk"
 
 $GitHubUrl = "https://github.com/GlistEngine"
 $GlistEngineUrl = "$GitHubUrl/GlistEngine"
 $GlistAppUrl = "$GitHubUrl/glistapp"
-$GlistZbinUrl = (Invoke-RestMethod -Uri "https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-win64" -ErrorAction Inquire)
+$ZbinMetadataUrl = "https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-win64.json"
+
+# raw.githubusercontent serves .json as text/plain, so Invoke-RestMethod hands
+# back a string instead of an object. Parse it ourselves.
+try {
+    $ZbinMetadata = (Invoke-WebRequest -Uri $ZbinMetadataUrl -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
+} catch {
+    Write-Host "Failed to fetch zbin metadata: $_"
+    Read-Host "Press Enter to exit"
+    return
+}
+
+$GlistZbinZip = $ZbinMetadata.pattern
+$GlistZbinUrl = "https://github.com/$($ZbinMetadata.repo)/releases/download/$($ZbinMetadata.version)/$GlistZbinZip"
+Write-Host "Latest zbin release: $($ZbinMetadata.version)"
 Write-Host "Latest zbin release url: $GlistZbinUrl"
 
 $GitPortableUrl = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/MinGit-2.43.0-64-bit.zip"
@@ -60,20 +75,31 @@ New-Item -ItemType Directory -Path $GistAppsDir -Force -ErrorAction Inquire | Ou
 New-Item -ItemType Directory -Path $GlistZbinDir -Force -ErrorAction Inquire | Out-Null
 
 # Download and extract zbin
-# Since zbin url is redirecting, we cannot use bits transfer
-$webClient = New-Object System.Net.WebClient
-Write-Host "Downloading zbin file..."
-$webClient.DownloadFile($GlistZbinUrl, "$TempDirectory\glistzbin-win64.zip")
-Write-Host "Download successful."
+if (Test-Path $GlistZbinExtractedDir) {
+    Write-Host "Zbin already exists at $GlistZbinExtractedDir, skipping download"
+} else {
+    # Since zbin url is redirecting, we cannot use bits transfer
+    $ZbinArchive = "$TempDirectory\$GlistZbinZip"
+    $webClient = New-Object System.Net.WebClient
+    Write-Host "Downloading zbin file..."
+    try {
+        $webClient.DownloadFile($GlistZbinUrl, $ZbinArchive)
+    } catch {
+        Write-Host "Error downloading zbin: $_"
+        Read-Host "Press Enter to exit"
+        return
+    }
+    Write-Host "Download successful."
 
-try {
-    # Extract the archive
-    [System.IO.Compression.ZipFile]::ExtractToDirectory("$TempDirectory\glistzbin-win64.zip", $GlistZbinDir)
-    Write-Host "Extraction successful."
-} catch {
-    Write-Host "Error extracting archive: $_"
-    Read-Host "Press Enter to exit"
-    return
+    try {
+        # Extract the archive
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZbinArchive, $GlistZbinDir)
+        Write-Host "Extraction successful."
+    } catch {
+        Write-Host "Error extracting archive: $_"
+        Read-Host "Press Enter to exit"
+        return
+    }
 }
 
 # Clone repos
@@ -86,10 +112,14 @@ git clone $GlistAppURL
 Remove-Item -Path $TempDirectory -Recurse -Force -ErrorAction SilentlyContinue
 
 # Copy link
-$Desktop = [Environment]::GetFolderPath("Desktop")
-Copy-Item -Path $EclipseLink -Destination "$Desktop/Start GlistEngine.lnk" -Force
+if (Test-Path $EclipseLink) {
+    $Desktop = [Environment]::GetFolderPath("Desktop")
+    Copy-Item -Path $EclipseLink -Destination "$Desktop\Start GlistEngine.lnk" -Force
 
-# Start Eclipse
-Start-Process -FilePath $EclipseLink
+    # Start Eclipse
+    Start-Process -FilePath $EclipseLink
+} else {
+    Write-Host "Shortcut not found at $EclipseLink, skipping shortcut creation."
+}
 
 #Read-Host "Press enter to exit"
