@@ -104,7 +104,7 @@ if ! $skip_brew; then
         eval "$(brew shellenv)"
     fi
     brew_prefix="$(brew --prefix)"
-    brew install git openssl@3 cmake glew glfw glm freetype assimp curl wget pkg-config ninja
+    brew install git openssl@3 cmake glew glfw glm freetype assimp curl wget pkg-config ninja vulkan-loader vulkan-headers molten-vk vulkan-tools shaderc glslang
 else
     echo "Skipping Homebrew install step"
     if command -v brew >/dev/null 2>&1; then
