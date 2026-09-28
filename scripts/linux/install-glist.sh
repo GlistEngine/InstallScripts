@@ -1,6 +1,47 @@
 #!/bin/bash
-version="0.2.0"
+version="0.3.0"
 echo "Installation script version $version"
+
+# ---- options ----
+# Each can also come from the environment, for runs that cannot pass flags
+# (Glist Studio sets them):
+#   --github-user NAME   GLIST_GITHUB_USERNAME=NAME  clone NAME's forks (default: GlistEngine)
+#   --unattended         GLIST_UNATTENDED=1          ask nothing; sudo may still ask for a password
+#   --no-eclipse         GLIST_NO_ECLIPSE=1          skip the Eclipse shortcut
+username="${GLIST_GITHUB_USERNAME:-}"
+unattended="${GLIST_UNATTENDED:-}"
+no_eclipse="${GLIST_NO_ECLIPSE:-}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --github-user) username="$2"; shift ;;
+        --unattended) unattended=1 ;;
+        --no-eclipse) no_eclipse=1 ;;
+    esac
+    shift
+done
+
+# Unattended, git fails on a repository it cannot read instead of asking for a login.
+[ -n "$unattended" ] && export GIT_TERMINAL_PROMPT=0
+
+# ---- progress ----
+# Steps print as "==> [n/total] name", and the run ends with "==> Done: ..." or
+# "==> Failed: ...", the same in all three installers, so a front end can follow.
+step_total=7
+step_index=0
+step() {
+    step_index=$((step_index + 1))
+    echo ""
+    echo "==> [$step_index/$step_total] $*"
+}
+fail() {
+    echo "==> Failed: $*"
+    exit 1
+}
+
+# Pulls a string field out of the metadata JSON without needing jq.
+metadata_get() {
+    printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -1
+}
 
 # Installs a list of packages one at a time, skipping any that the current
 # release does not carry. Used for the Vulkan set, which is optional: the engine
@@ -16,6 +57,8 @@ install_optional() {
         fi
     done
 }
+
+step "System packages"
 
 # Determine package manager
 if command -v apt >/dev/null; then
@@ -46,58 +89,74 @@ elif command -v yum >/dev/null; then
     VULKAN_PACKAGES="vulkan-loader-devel vulkan-headers vulkan-tools mesa-vulkan-drivers vulkan-validation-layers glslang-devel libshaderc-devel"
 
 else
-    echo "Unsupported package manager. Install dependencies manually."
-    exit 1
+    fail "Unsupported package manager. Install the dependencies manually."
 fi
 
 $UPDATE_CMD
 
 # Install required packages
-$PKG_INSTALL $PACKAGES || { echo "Failed to install core dependencies"; exit 1; }
+$PKG_INSTALL $PACKAGES || fail "Could not install the required packages"
 
 # Install Vulkan support. Optional: without it the engine builds without
 # GLIST_HAS_VULKAN and reports "Vulkan backend requested but Vulkan development
 # support was not available" at run time, then uses OpenGL.
-echo "Installing Vulkan support (optional, engine falls back to OpenGL without it)"
+step "Vulkan support (optional, the engine falls back to OpenGL without it)"
 install_optional $VULKAN_PACKAGES
 
-# Create directories
-mkdir -p ~/dev/glist ~/dev/glist/zbin ~/dev/glist/myglistapps
+step "Folders"
+mkdir -p ~/dev/glist ~/dev/glist/zbin ~/dev/glist/myglistapps || fail "Could not create ~/dev/glist"
 
 # GitHub username
-echo "Enter your GitHub Username (press enter to clone from the default repo): "
-read username
+if [ -z "$username" ] && [ -z "$unattended" ] && [ -t 0 ]; then
+    echo "Enter your GitHub Username (press enter to clone from the default repo): "
+    read username
+fi
 username=${username:-GlistEngine}
 
-# Clone repositories
-cd ~/dev/glist
-git clone https://github.com/$username/GlistEngine || { echo "Failed to clone GlistEngine"; exit 1; }
-cd ~/dev/glist/myglistapps
-git clone https://github.com/$username/GlistApp || { echo "Failed to clone GlistApp"; exit 1; }
-
-# Download zbin
-cd ~/dev/glist/zbin
-ZIP_NAME="glistzbin-linux.zip"
-URL=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/zbin-linux)
-if [ ! -f "$ZIP_NAME" ]; then
-    echo "Downloading zbin: $ZIP_NAME"
-    wget -O "$ZIP_NAME" "$URL" || { echo "Failed to download zbin!"; exit 1; }
+step "GlistEngine"
+cd ~/dev/glist || fail "Could not open ~/dev/glist"
+if [ -d GlistEngine ]; then
+    echo "GlistEngine already exists, skipping"
+else
+    git clone "https://github.com/$username/GlistEngine" || fail "Could not clone GlistEngine from $username"
 fi
-UNZIP_DIR="${ZIP_NAME%.zip}"
+
+step "GlistApp"
+cd ~/dev/glist/myglistapps || fail "Could not open ~/dev/glist/myglistapps"
+if [ -d GlistApp ]; then
+    echo "GlistApp already exists, skipping"
+else
+    git clone "https://github.com/$username/GlistApp" || fail "Could not clone GlistApp from $username"
+fi
+
+step "Glist tools (zbin)"
+cd ~/dev/glist/zbin || fail "Could not open ~/dev/glist/zbin"
+META_URL="https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-linux.json"
+META_JSON=$(curl -fsSL "$META_URL") || fail "Could not fetch the zbin metadata"
+REPO=$(metadata_get "$META_JSON" repo)
+PATTERN=$(metadata_get "$META_JSON" pattern)
+META_VERSION=$(metadata_get "$META_JSON" version)
+ECLIPSE_FOLDER=$(metadata_get "$META_JSON" eclipse_folder)
+ZBIN_URL="https://github.com/${REPO}/releases/download/${META_VERSION}/${PATTERN}"
+UNZIP_DIR="glistzbin-linux"
+if [ ! -f "$PATTERN" ]; then
+    echo "Downloading zbin: $ZBIN_URL"
+    wget -O "$PATTERN" "$ZBIN_URL" || fail "Could not download the zbin"
+fi
 if [ ! -d "$UNZIP_DIR" ]; then
     echo "Unzipping zbin"
-    unzip "$ZIP_NAME" -x '__MACOSX/*' '.git/*'
+    unzip -q "$PATTERN" -x '__MACOSX/*' '.git/*' || fail "Could not unzip the zbin"
 else
     echo "Zbin already exists, skipping"
 fi
 
-# Create Eclipse shortcut
-ECLIPSE_FOLDER=$(curl -s https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/url/eclipse-linux)
-ECLIPSE_DIR=~/dev/glist/zbin/glistzbin-linux/eclipse/$ECLIPSE_FOLDER
+step "Eclipse shortcut"
+ECLIPSE_DIR=~/dev/glist/zbin/$UNZIP_DIR/eclipse/$ECLIPSE_FOLDER
 ECLIPSE_BIN="$ECLIPSE_DIR/eclipse"
 ECLIPSE_ICON="$ECLIPSE_DIR/icon.xpm"
-if [ -x "$ECLIPSE_BIN" ]; then
-    echo "Creating desktop shortcut..."
+if [ -n "$no_eclipse" ]; then
+    echo "Skipped (--no-eclipse)"
+elif [ -x "$ECLIPSE_BIN" ]; then
     DESKTOP_FILE=~/.local/share/applications/glistengine-eclipse.desktop
     mkdir -p "$(dirname "$DESKTOP_FILE")"
     cat > "$DESKTOP_FILE" <<EOF
@@ -143,4 +202,4 @@ else
 fi
 
 echo ""
-echo "Installation completed successfully!"
+echo "==> Done: Glist Engine is installed in ~/dev/glist"

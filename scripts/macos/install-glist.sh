@@ -1,4 +1,4 @@
-version="0.4.0"
+version="0.5.0"
 echo "Installation script version $version"
 
 # ---- helper: pull values from metadata JSON ----
@@ -10,26 +10,60 @@ metadata_get() {
 }
 
 # ---- args ----
+# Each can also come from the environment, for runs that cannot pass flags
+# (Glist Studio sets them):
+#   --skip-brew                                      leave Homebrew and its packages alone
+#   --github-user NAME   GLIST_GITHUB_USERNAME=NAME  clone NAME's forks (default: GlistEngine)
+#   --unattended         GLIST_UNATTENDED=1          ask nothing; sudo may still ask for a password
+#   --no-eclipse         GLIST_NO_ECLIPSE=1          skip Eclipse: no Gatekeeper change, signing or /Applications link
 skip_brew=false
-for arg in "$@"; do
-  case "$arg" in
+username="${GLIST_GITHUB_USERNAME:-}"
+unattended="${GLIST_UNATTENDED:-}"
+no_eclipse="${GLIST_NO_ECLIPSE:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
     --skip-brew) skip_brew=true ;;
+    --github-user) username="$2"; shift ;;
+    --unattended) unattended=1 ;;
+    --no-eclipse) no_eclipse=1 ;;
   esac
+  shift
 done
+
+# Unattended, git fails on a repository it cannot read instead of asking for a login.
+[ -n "$unattended" ] && export GIT_TERMINAL_PROMPT=0
+
+# ---- progress ----
+# Steps print as "==> [n/total] name", and the run ends with "==> Done: ..." or
+# "==> Failed: ...", the same in all three installers, so a front end can follow.
+step_total=7
+step_index=0
+step() {
+    step_index=$((step_index + 1))
+    echo ""
+    echo "==> [$step_index/$step_total] $*"
+}
+fail() {
+    echo "==> Failed: $*"
+    exit 1
+}
 
 brew_prefix=""
 
-# ---- sudo: prompt once, keep alive for the rest of the script ----
-# Saves us from getting prompted again mid-install (e.g. before codesign).
-sudo -v
-( while true; do sudo -n true; sleep 60; kill -0 $$ 2>/dev/null || exit; done ) >/dev/null 2>&1 &
-sudo_keeper_pid=$!
-trap 'kill $sudo_keeper_pid 2>/dev/null' EXIT
+clt_installed() {
+    xcode-select -p >/dev/null 2>&1 && [ -f "$(xcode-select -p)/usr/bin/clang" ]
+}
 
-# ---- macOS Gatekeeper ----
-# Required so the ad-hoc-signed Eclipse + launcher .apps can be opened. Newer
-# macOS versions changed the flag name; try both, ignore failures.
-sudo spctl --master-disable 2>/dev/null || sudo spctl --global-disable 2>/dev/null || true
+# ---- sudo: prompt once, keep alive for the rest of the script ----
+# Saves us from getting prompted again mid-install (e.g. before codesign). Only
+# needed for the Command Line Tools, a first Homebrew install and Eclipse, so a
+# Mac that has the first two and skips Eclipse is not asked for a password.
+if ! clt_installed || { ! $skip_brew && ! command -v brew >/dev/null 2>&1; } || [ -z "$no_eclipse" ]; then
+    sudo -v || fail "Administrator access is needed"
+    ( while true; do sudo -n true; sleep 60; kill -0 $$ 2>/dev/null || exit; done ) >/dev/null 2>&1 &
+    sudo_keeper_pid=$!
+    trap 'kill $sudo_keeper_pid 2>/dev/null' EXIT
+fi
 
 # ---- Xcode Command Line Tools (BEFORE brew, since Homebrew's installer would
 # otherwise pop the GUI CLT installer itself) ----
@@ -37,7 +71,7 @@ sudo spctl --master-disable 2>/dev/null || sudo spctl --global-disable 2>/dev/nu
 # only required for iOS targeting and is left to the user — install via
 # `brew install xcodes && xcodes install --latest` if needed.
 install_xcode_clt() {
-    if xcode-select -p >/dev/null 2>&1 && [ -f "$(xcode-select -p)/usr/bin/clang" ]; then
+    if clt_installed; then
         echo "Xcode Command Line Tools already installed"
         return 0
     fi
@@ -80,19 +114,20 @@ install_xcode_clt() {
             sleep 5
             waited=$((waited + 5))
             if [ $waited -ge 1800 ]; then
-                echo "Timed out waiting for CLT install (30 min). Re-run the script after installing manually."
-                exit 1
+                fail "Timed out waiting for the Command Line Tools (30 min). Install them, then run this again."
             fi
         done
     fi
 }
+step "Xcode Command Line Tools"
 install_xcode_clt
 
 # ---- brew ----
+step "Homebrew and libraries"
 if ! $skip_brew; then
     if ! command -v brew >/dev/null 2>&1; then
         echo "Brew is not installed!"
-        NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || fail "Could not install Homebrew"
         # Fresh install won't be in PATH yet, init from known location
         if [[ "$(uname -m)" == "arm64" ]]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -104,7 +139,8 @@ if ! $skip_brew; then
         eval "$(brew shellenv)"
     fi
     brew_prefix="$(brew --prefix)"
-    brew install git openssl@3 cmake glew glfw glm freetype assimp curl wget pkg-config ninja vulkan-loader vulkan-headers molten-vk vulkan-tools shaderc glslang
+    brew install git openssl@3 cmake glew glfw glm freetype assimp curl wget pkg-config ninja vulkan-loader vulkan-headers molten-vk vulkan-tools shaderc glslang \
+        || fail "Could not install the Homebrew packages"
 else
     echo "Skipping Homebrew install step"
     if command -v brew >/dev/null 2>&1; then
@@ -112,28 +148,52 @@ else
     fi
 fi
 
+if [ -n "$brew_prefix" ]; then
+    echo "OPENSSL VER:"
+    ls "$brew_prefix/Cellar/openssl@3" 2>/dev/null || true
+
+    echo "LLVM VER:"
+    ls "$brew_prefix/Cellar/llvm" 2>/dev/null || true
+
+    # Once, rather than a new line on every run.
+    if ! grep -qs "export PATH=\$PATH:$brew_prefix/bin" ~/.zprofile; then
+        (echo; echo "export PATH=\$PATH:$brew_prefix/bin") >> ~/.zprofile
+    fi
+    export PATH="$PATH:$brew_prefix/bin"
+fi
+
 # ---- dirs ----
-mkdir -p ~/dev/glist
-mkdir -p ~/dev/glist/zbin
-mkdir -p ~/dev/glist/myglistapps
+step "Folders"
+mkdir -p ~/dev/glist ~/dev/glist/zbin ~/dev/glist/myglistapps || fail "Could not create ~/dev/glist"
 
 # ---- github user ----
-# Override with GLIST_GITHUB_USERNAME=... for fully unattended runs.
-if [ -n "${GLIST_GITHUB_USERNAME:-}" ]; then
-    username="$GLIST_GITHUB_USERNAME"
-    echo "Using GitHub username from env: $username"
-elif [ -t 0 ]; then
+if [ -z "$username" ] && [ -z "$unattended" ] && [ -t 0 ]; then
     echo "Enter your GitHub Username (press enter to clone from the default repo): "
     read username
 fi
 [ -z "${username:-}" ] && username="GlistEngine"
+echo "Cloning from: $username"
 
 # ---- clone repos ----
-cd ~/dev/glist || exit 1
-git clone https://github.com/$username/GlistEngine || exit 1
+step "GlistEngine"
+cd ~/dev/glist || fail "Could not open ~/dev/glist"
+if [ -d GlistEngine ]; then
+    echo "GlistEngine already exists, skipping"
+else
+    git clone "https://github.com/$username/GlistEngine" || fail "Could not clone GlistEngine from $username"
+fi
+
+step "GlistApp"
+cd ~/dev/glist/myglistapps || fail "Could not open ~/dev/glist/myglistapps"
+if [ -d GlistApp ]; then
+    echo "GlistApp already exists, skipping"
+else
+    git clone "https://github.com/$username/GlistApp" || fail "Could not clone GlistApp from $username"
+fi
 
 # ---- zbin ----
-cd ~/dev/glist/zbin || exit 1
+step "Glist tools (zbin)"
+cd ~/dev/glist/zbin || fail "Could not open ~/dev/glist/zbin"
 
 # Single universal zbin for both arm64 and Intel Macs. The bundled
 # GlistEngine.app launcher is a universal Mach-O that dispatches to either
@@ -141,7 +201,7 @@ cd ~/dev/glist/zbin || exit 1
 DIR="glistzbin-macos"
 META_URL="https://raw.githubusercontent.com/GlistEngine/InstallScripts/main/metadata/zbin-macos.json"
 
-META_JSON=$(curl -fsSL "$META_URL") || { echo "Failed to fetch metadata"; exit 1; }
+META_JSON=$(curl -fsSL "$META_URL") || fail "Could not fetch the zbin metadata"
 REPO=$(metadata_get "$META_JSON" repo)
 PATTERN=$(metadata_get "$META_JSON" pattern)
 META_VERSION=$(metadata_get "$META_JSON" version)
@@ -150,32 +210,31 @@ ZBIN_URL="https://github.com/${REPO}/releases/download/${META_VERSION}/${PATTERN
 
 if [ ! -f "$ZIP" ]; then
     echo "Downloading zbin: $ZBIN_URL"
-    wget --no-check-certificate --tries=inf --retry-connrefused --waitretry=1 -O "$ZIP" "$ZBIN_URL" || exit 1
+    wget --no-check-certificate --tries=inf --retry-connrefused --waitretry=1 -O "$ZIP" "$ZBIN_URL" || fail "Could not download the zbin"
 fi
 
 if [ ! -d "$DIR" ]; then
-    unzip "$ZIP" -x '__MACOSX/*' '.git/*'
+    unzip -q "$ZIP" -x '__MACOSX/*' '.git/*' || fail "Could not unzip the zbin"
 else
     echo "Zbin already exists, skipping unzip"
 fi
 
-cd "$DIR/eclipse" || exit 1
-sudo xattr -cr eclipsecpp-arm64/Eclipse.app eclipsecpp-x86_64/Eclipse.app GlistEngine.app
-sudo codesign --force --deep --sign - eclipsecpp-arm64/Eclipse.app
-sudo codesign --force --deep --sign - eclipsecpp-x86_64/Eclipse.app
-sudo codesign --force --deep --sign - GlistEngine.app
-sudo ln -sf "$(pwd)/GlistEngine.app" "/Applications/GlistEngine.app"
+# ---- Eclipse ----
+step "Eclipse"
+if [ -n "$no_eclipse" ]; then
+    echo "Skipped (--no-eclipse)"
+else
+    # Required so the ad-hoc-signed Eclipse + launcher .apps can be opened. Newer
+    # macOS versions changed the flag name; try both, ignore failures.
+    sudo spctl --master-disable 2>/dev/null || sudo spctl --global-disable 2>/dev/null || true
 
-# ---- debug info ----
-if [ -n "$brew_prefix" ]; then
-    echo "OPENSSL VER:"
-    ls "$brew_prefix/Cellar/openssl@3" 2>/dev/null || true
-
-    echo "LLVM VER:"
-    ls "$brew_prefix/Cellar/llvm" 2>/dev/null || true
-
-    (echo; echo "export PATH=\$PATH:$brew_prefix/bin") >> ~/.zprofile
-    export PATH="$PATH:$brew_prefix/bin"
+    cd "$DIR/eclipse" || fail "Could not open the zbin's eclipse folder"
+    sudo xattr -cr eclipsecpp-arm64/Eclipse.app eclipsecpp-x86_64/Eclipse.app GlistEngine.app
+    sudo codesign --force --deep --sign - eclipsecpp-arm64/Eclipse.app
+    sudo codesign --force --deep --sign - eclipsecpp-x86_64/Eclipse.app
+    sudo codesign --force --deep --sign - GlistEngine.app
+    sudo ln -sf "$(pwd)/GlistEngine.app" "/Applications/GlistEngine.app"
 fi
 
-echo "Installation completed successfully!"
+echo ""
+echo "==> Done: Glist Engine is installed in ~/dev/glist"
